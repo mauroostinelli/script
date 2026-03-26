@@ -1,0 +1,39 @@
+function resetSheet(sheet) {
+  const lr = Math.max(sheet.getLastRow(), 1);
+  const lc = Math.max(sheet.getLastColumn(), 1);
+  const range = sheet.getRange(1, 1, lr, lc);
+
+  // 1) Muy importante: intentar quitar formato "Texto" antes de cualquier otro formato
+  //    Si falla el rango completo (por chips/texto), probamos columna a columna.
+  try {
+    try {
+      range.setNumberFormat('General');
+      SpreadsheetApp.flush();
+    } catch (e1) {
+      for (let c = 1; c <= lc; c++) {
+        try {
+          sheet.getRange(1, c, lr, 1).setNumberFormat('General');
+          SpreadsheetApp.flush();
+        } catch (e2) {
+          // Saltamos columnas conflictivas, por ejemplo chips/texto
+        }
+      }
+    }
+  } catch (e3) {
+    // Blindaje extra por si la excepción queda diferida
+  }
+
+  // 2) Reset visual posterior
+  try { range.setBackground(C.WHITE); } catch (e) {}
+  try { range.setFontColor(C.TEXT); } catch (e) {}
+  try { range.setFontFamily('Arial'); } catch (e) {}
+  try { range.setFontSize(10); } catch (e) {}
+  try { range.setFontWeight('normal'); } catch (e) {}
+  try { range.setFontStyle('normal'); } catch (e) {}
+  try { range.setHorizontalAlignment('left'); } catch (e) {}
+  try { range.setVerticalAlignment('middle'); } catch (e) {}
+  try { range.setWrap(false); } catch (e) {}
+  try { range.setBorder(false, false, false, false, false, false); } catch (e) {}
+
+  try { SpreadsheetApp.flush(); } catch (e) {}
+}
