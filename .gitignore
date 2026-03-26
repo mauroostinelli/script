@@ -1,0 +1,17 @@
+# Archivos generados por clasp
+.claspignore
+.clasp.json
+
+# Credenciales locales
+.env
+credentials.json
+token.json
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
