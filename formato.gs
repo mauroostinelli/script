@@ -1,864 +1,524 @@
 /**
- * Formateador corporativo — Estilo minimalista
- * Función principal: formatearTodo()
- * v5.0 — Sistema celda editable (amarillo) vs calculada (fórmula) según SOP
+ * PANEL DE SEGUIMIENTO DE LICITACIÓN Y COSTES DE PROYECTO
+ * Genera la hoja Google Sheets a partir de la imagen del panel.
  *
- * SISTEMA DE COLORES (basado en el SOP del equipo):
- *   🟡 INPUT_BG (#FFF9C4)  — Celda EDITABLE por el usuario (datos de entrada)
- *   🟣 CALC_BG  (#EDEAF6)  — Celda con FÓRMULA / calculada automáticamente (solo lectura visual)
+ * Función principal: crearPanel()
+ *
+ * SISTEMA DE COLORES:
+ *   🟡 INPUT_BG (#FFF9C4)  — Celda EDITABLE por el usuario
+ *   🟣 CALC_BG  (#EDEAF6)  — Celda con FÓRMULA / calculada
  *   ⬛ DARK    (#1E1340)  — Cabeceras de sección
- *   ⚪ WHITE   (#FFFFFF)  — Filas normales / alternadas
+ *   🟦 BLUE    (#1A3A5C)  — Cabeceras azul oscuro (panel principal)
+ *   🟨 YELLOW  (#FFD600)  — Resaltado especial (Meses de Trabajo)
  */
 
+// ─── PALETA DE COLORES
 const C = {
   WHITE:      '#FFFFFF',
-  BG_ALT:     '#F5F4FB',
-  BG_HOVER:   '#EDEAF6',
-
-  // Sistema de celdas según SOP
-  INPUT_BG:   '#FFF9C4',   // 🟡 amarillo suave — celda EDITABLE (el usuario rellena)
-  INPUT_FG:   '#3D3000',   // texto oscuro sobre amarillo
-  INPUT_BD:   '#E6D400',   // borde amarillo intenso para resaltar el campo editable
-  CALC_BG:    '#EDEAF6',   // 🟣 lila suave — celda CALCULADA (fórmula, no tocar)
-  CALC_FG:    '#3B2D9A',   // texto índigo sobre calculada
-
-  // Corporativos
-  DARK:       '#1E1340',
-  PURPLE:     '#9B35B5',
-  PURPLE_D:   '#6B1E80',
-  PURPLE_XL:  '#FAF5FF',
+  DARK:       '#1A3A5C',
+  DARK2:      '#1E2B3A',
+  MID:        '#2C4A6E',
+  LIGHT_HDR:  '#2E5F8A',
+  GRAY_HDR:   '#4A5568',
+  BLUE_ROW:   '#D6E4F0',
+  ALT:        '#EBF3FA',
+  INPUT_BG:   '#FFF9C4',
+  INPUT_FG:   '#3D3000',
+  INPUT_BD:   '#E6D400',
+  CALC_BG:    '#EDEAF6',
+  CALC_FG:    '#3B2D9A',
+  YELLOW_HL:  '#FFD600',
+  YELLOW_FG:  '#1A1A00',
   RED:        '#E84040',
-  RED_D:      '#A02828',
-  RED_XL:     '#FFF5F5',
-  INDIGO:     '#6355D4',
-  INDIGO_D:   '#3B2D9A',
-  INDIGO_XL:  '#F4F2FF',
-
-  TEXT:       '#1E1340',
-  TEXT_S:     '#4A3878',
-  TEXT_L:     '#9E94C0',
-
-  BORDER:     '#E8E5F0',
-  BORDER_M:   '#C8BEE8',
-
-  // Gantt
-  PT_BG:      '#1E1340',
-  TASK_BG:    '#6B1E80',
-  DEL_BG:     '#EAE6FF',
-  DEL_FG:     '#3B2D9A',
-  PT_ON:      '#E84040',
-  TASK_ON:    '#9B35B5',
-  DEL_ON:     '#6355D4',
-  PT_OFF:     '#F0EAEE',
-  TASK_OFF:   '#EDE8F5',
-  DEL_OFF:    '#F0EEF8',
-
-  SUM_A:      '#1E1340',
-  SUM_B:      '#3B2D9A',
-  SUM_C:      '#6355D4',
-  SUM_D:      '#9B35B5',
-
-  CREAM:      '#FFFDF8',
+  GREEN:      '#2E7D32',
+  TEXT:       '#1A1A2E',
+  TEXT_L:     '#6B7280',
+  BORDER:     '#B8C8D8',
+  BORDER_M:   '#7A9AB8',
+  ALERT_BG:   '#FFFDE7',
+  ALERT_BD:   '#F9A825',
+  LINK_BG:    '#E8F0FE',
+  LINK_FG:    '#1A56DB',
 };
 
 // ─── MENÚ
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('Formato corporativo')
-    .addItem('✦ Aplicar formato', 'formatearTodo')
+    .createMenu('Panel Licitación')
+    .addItem('✦ Crear Panel', 'crearPanel')
+    .addItem('↺ Limpiar hoja', 'limpiarHoja')
     .addToUi();
 }
 
-// ─── PRINCIPAL
-function formatearTodo() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.getSheets().forEach(function(sheet) {
-    const n = norm(sheet.getName());
-    if      (n.includes('datos previos'))  formatDatosPrevios(sheet);
-    else if (n.includes('presupuesto'))    formatPresupuesto(sheet);
-    else if (n.includes('gantt'))          formatGantt(sheet);
-    else if (n.includes('sensibilidad'))   formatSensibilidad(sheet);
-    else if (n.includes('licitacion'))     formatLicitaciones(sheet);
-    else                                   formatGenerico(sheet);
+// ─── UTILIDADES
+function s(sheet, r, c, valor) {
+  sheet.getRange(r, c).setValue(valor);
+}
+
+function fmt(sheet, r, c, opciones) {
+  const cell = sheet.getRange(r, c);
+  if (opciones.bg)        cell.setBackground(opciones.bg);
+  if (opciones.fg)        cell.setFontColor(opciones.fg);
+  if (opciones.bold)      cell.setFontWeight('bold');
+  if (opciones.italic)    cell.setFontStyle('italic');
+  if (opciones.size)      cell.setFontSize(opciones.size);
+  if (opciones.align)     cell.setHorizontalAlignment(opciones.align);
+  if (opciones.valign)    cell.setVerticalAlignment(opciones.valign);
+  if (opciones.wrap)      cell.setWrap(true);
+  if (opciones.numFmt)    cell.setNumberFormat(opciones.numFmt);
+  if (opciones.border)    cell.setBorder(true, true, true, true, false, false, C.BORDER_M, SpreadsheetApp.BorderStyle.SOLID);
+}
+
+function rng(sheet, r, c, numR, numC) {
+  return sheet.getRange(r, c, numR, numC);
+}
+
+function fmtRange(sheet, r, c, numR, numC, opciones) {
+  const range = rng(sheet, r, c, numR, numC);
+  if (opciones.bg)     range.setBackground(opciones.bg);
+  if (opciones.fg)     range.setFontColor(opciones.fg);
+  if (opciones.bold)   range.setFontWeight('bold');
+  if (opciones.size)   range.setFontSize(opciones.size);
+  if (opciones.align)  range.setHorizontalAlignment(opciones.align);
+  if (opciones.valign) range.setVerticalAlignment(opciones.valign);
+  if (opciones.wrap)   range.setWrap(true);
+  if (opciones.border) range.setBorder(true, true, true, true, false, false, C.BORDER_M, SpreadsheetApp.BorderStyle.SOLID);
+}
+
+function merge(sheet, r, c, numR, numC) {
+  try { sheet.getRange(r, c, numR, numC).merge(); } catch(e) {}
+}
+
+function outerBorder(sheet, r, c, numR, numC, color) {
+  try {
+    sheet.getRange(r, c, numR, numC)
+      .setBorder(true, true, true, true, false, false,
+        color || C.BORDER_M, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  } catch(e) {}
+}
+
+function innerBorder(sheet, r, c, numR, numC) {
+  try {
+    sheet.getRange(r, c, numR, numC)
+      .setBorder(true, true, true, true, true, true,
+        C.BORDER, SpreadsheetApp.BorderStyle.SOLID);
+  } catch(e) {}
+}
+
+function cabeceraSec(sheet, r, c, numR, numC, texto, bg) {
+  merge(sheet, r, c, numR, numC);
+  s(sheet, r, c, texto);
+  fmtRange(sheet, r, c, numR, numC, {
+    bg: bg || C.DARK,
+    fg: C.WHITE,
+    bold: true,
+    size: 9,
+    align: 'left',
+    valign: 'middle'
   });
+}
+
+function inputCell(sheet, r, c) {
+  const cell = sheet.getRange(r, c);
+  cell.setBackground(C.INPUT_BG)
+      .setFontColor(C.INPUT_FG)
+      .setFontWeight('bold');
+  cell.setBorder(false, false, true, false, false, false,
+    C.INPUT_BD, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+}
+
+function calcCell(sheet, r, c) {
+  const cell = sheet.getRange(r, c);
+  cell.setBackground(C.CALC_BG)
+      .setFontColor(C.CALC_FG)
+      .setFontWeight('bold');
+}
+
+// ─── LIMPIAR HOJA
+function limpiarHoja() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Panel Licitación');
+  if (sheet) {
+    sheet.clear();
+    try { sheet.getRange(1,1,sheet.getMaxRows(),sheet.getMaxColumns()).breakApart(); } catch(e) {}
+  }
+}
+
+// ─── FUNCIÓN PRINCIPAL
+function crearPanel() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Obtener o crear hoja
+  let sheet = ss.getSheetByName('Panel Licitación');
+  if (!sheet) {
+    sheet = ss.insertSheet('Panel Licitación');
+  } else {
+    sheet.clear();
+    try { sheet.getRange(1,1,sheet.getMaxRows(),sheet.getMaxColumns()).breakApart(); } catch(e) {}
+  }
+
+  sheet.setTabColor(C.DARK);
+
+  // ── Configurar columnas y filas
+  const colWidths = [18, 140, 110, 110, 18, 140, 100, 100, 18, 130, 120, 120, 18, 140, 110, 110];
+  colWidths.forEach(function(w, i) {
+    try { sheet.setColumnWidth(i+1, w); } catch(e) {}
+  });
+
+  // Alturas de fila
+  for (let r = 1; r <= 60; r++) {
+    try { sheet.setRowHeight(r, 22); } catch(e) {}
+  }
+  try { sheet.setRowHeight(1, 36); } catch(e) {}
+  try { sheet.setRowHeight(3, 28); } catch(e) {}
+  try { sheet.setRowHeight(11, 28); } catch(e) {}
+  try { sheet.setRowHeight(19, 28); } catch(e) {}
+  try { sheet.setRowHeight(29, 28); } catch(e) {}
+  try { sheet.setRowHeight(40, 28); } catch(e) {}
+  try { sheet.setRowHeight(50, 28); } catch(e) {}
+
+  // ════════════════════════════════════════════
+  // FILA 1 — TÍTULO PRINCIPAL
+  // ════════════════════════════════════════════
+  merge(sheet, 1, 1, 1, 16);
+  s(sheet, 1, 1, 'PANEL DE SEGUIMIENTO DE LICITACIÓN Y COSTES DE PROYECTO');
+  fmtRange(sheet, 1, 1, 1, 16, {
+    bg: C.DARK,
+    fg: C.WHITE,
+    bold: true,
+    size: 13,
+    align: 'center',
+    valign: 'middle'
+  });
+
+  // ════════════════════════════════════════════
+  // BLOQUE A — RESUMEN ECONÓMICO (cols 1-4, filas 3-8)
+  // ════════════════════════════════════════════
+  cabeceraSec(sheet, 3, 1, 1, 4, '📈  RESUMEN ECONÓMICO', C.DARK2);
+  outerBorder(sheet, 3, 1, 6, 4);
+
+  const resEco = [
+    [4, 'Lic. Subtotal',    '€80.000,00',   false],
+    [5, 'Precio Ofertado',  '€91.198,74',   true],
+    [6, 'Precio con IVA',   '€110.350,47',  true],
+    [7, 'Baja',             '12,28%',       true],
+  ];
+  resEco.forEach(function(row) {
+    s(sheet, row[0], 2, row[1]);
+    s(sheet, row[0], 3, row[2]);
+    fmtRange(sheet, row[0], 2, 1, 1, {fg: C.WHITE, bg: C.DARK2, align: 'right', bold: true, size: 9});
+    fmtRange(sheet, row[0], 3, 1, 2, {fg: C.WHITE, bg: C.DARK2, bold: true, align: 'right', size: 9, numFmt: row[3] ? '0.00%' : '€#,##0.00'});
+    merge(sheet, row[0], 3, 1, 2);
+    if (row[3]) calcCell(sheet, row[0], 3);
+    else        inputCell(sheet, row[0], 3);
+  });
+
+  // ════════════════════════════════════════════
+  // BLOQUE B — RESUMEN DE EJECUCIÓN (cols 5-8, filas 3-8)
+  // ════════════════════════════════════════════
+  cabeceraSec(sheet, 3, 5, 1, 4, '⏱  RESUMEN DE EJECUCIÓN', C.LIGHT_HDR);
+  outerBorder(sheet, 3, 5, 6, 4);
+
+  const resEje = [
+    [4, 'Horas Totales',       '5.381',  false, false],
+    [5, 'Meses de Trabajo',    '2,00',   true,  true],
+    [6, 'Personas adscritas',  '20,23',  true,  false],
+  ];
+  resEje.forEach(function(row) {
+    s(sheet, row[0], 6, row[1]);
+    s(sheet, row[0], 8, row[2]);
+    fmtRange(sheet, row[0], 6, 1, 2, {fg: C.TEXT, bg: row[3] ? C.YELLOW_HL : C.WHITE, bold: row[3], size: 9, align: 'left'});
+    merge(sheet, row[0], 6, 1, 2);
+    fmtRange(sheet, row[0], 8, 1, 1, {fg: row[3] ? C.YELLOW_FG : C.TEXT, bg: row[3] ? C.YELLOW_HL : C.WHITE, bold: true, size: 9, align: 'right'});
+    if (row[4]) {
+      // Meses de trabajo: celda destacada en amarillo
+      sheet.getRange(row[0], 8).setBackground(C.YELLOW_HL).setFontColor(C.YELLOW_FG).setFontWeight('bold');
+    } else if (row[2]) {
+      calcCell(sheet, row[0], 8);
+    } else {
+      inputCell(sheet, row[0], 8);
+    }
+  });
+
+  // ════════════════════════════════════════════
+  // BLOQUE C — COSTES TOTALES (cols 9-12, filas 3-8)
+  // ════════════════════════════════════════════
+  cabeceraSec(sheet, 3, 9, 1, 4, 'COSTES TOTALES', C.MID);
+  outerBorder(sheet, 3, 9, 6, 4);
+
+  s(sheet, 4, 10, '👤 Coste personal total');
+  s(sheet, 4, 12, '€91.198,74');
+  fmtRange(sheet, 4, 10, 1, 2, {fg: C.WHITE, bg: C.MID, bold: true, size: 9, align: 'left'});
+  merge(sheet, 4, 10, 1, 2);
+  calcCell(sheet, 4, 12);
+  sheet.getRange(4, 12).setValue('€91.198,74').setNumberFormat('€#,##0.00').setFontWeight('bold').setHorizontalAlignment('right');
+
+  s(sheet, 6, 10, 'Coste no personal');
+  s(sheet, 6, 12, '€0,00');
+  fmtRange(sheet, 6, 10, 1, 2, {fg: C.WHITE, bg: C.MID, bold: true, size: 9, align: 'left'});
+  merge(sheet, 6, 10, 1, 2);
+  inputCell(sheet, 6, 12);
+  sheet.getRange(6, 12).setValue(0).setNumberFormat('€#,##0.00').setHorizontalAlignment('right');
+
+  // ════════════════════════════════════════════
+  // BLOQUE D — MÁRGENES Y PARÁMETROS (cols 13-16, filas 3-8)
+  // ════════════════════════════════════════════
+  cabeceraSec(sheet, 3, 13, 1, 4, 'MÁRGENES Y PARÁMETROS', C.GRAY_HDR);
+  outerBorder(sheet, 3, 13, 6, 4);
+
+  const margenes = [
+    [4, 'Beneficio industrial',     '6%',   'por defecto'],
+    [5, 'Gastos generales',         '13%',  'por defecto'],
+    [6, 'Baja promedio histórico',  '21%',  ''],
+  ];
+  margenes.forEach(function(row) {
+    s(sheet, row[0], 14, row[1]);
+    s(sheet, row[0], 15, row[2]);
+    s(sheet, row[0], 16, row[3]);
+    fmtRange(sheet, row[0], 14, 1, 1, {fg: C.TEXT, bg: C.WHITE, size: 9, align: 'left'});
+    inputCell(sheet, row[0], 15);
+    sheet.getRange(row[0], 15).setNumberFormat('0%').setHorizontalAlignment('right');
+    fmtRange(sheet, row[0], 16, 1, 1, {fg: C.TEXT_L, bg: C.WHITE, italic: true, size: 8});
+  });
+
+  // ════════════════════════════════════════════
+  // BLOQUE E — TARIFAS DE PERSONAL (cols 1-8, filas 11-17)
+  // ════════════════════════════════════════════
+  const R_TARIFAS = 11;
+  cabeceraSec(sheet, R_TARIFAS, 1, 1, 8, 'TARIFAS DE PERSONAL', C.DARK);
+  outerBorder(sheet, R_TARIFAS, 1, 8, 8);
+
+  // Encabezados de tabla
+  s(sheet, R_TARIFAS+1, 2, 'Perfil');
+  s(sheet, R_TARIFAS+1, 5, 'Tarifa/Mes');
+  s(sheet, R_TARIFAS+1, 8, 'Tarifa/Hora');
+  fmtRange(sheet, R_TARIFAS+1, 1, 1, 8, {bg: C.DARK2, fg: C.WHITE, bold: true, size: 9, align: 'left'});
+  sheet.getRange(R_TARIFAS+1, 5).setHorizontalAlignment('right');
+  sheet.getRange(R_TARIFAS+1, 8).setHorizontalAlignment('right');
+  merge(sheet, R_TARIFAS+1, 2, 1, 3);
+
+  const tarifas = [
+    ['Plantilla ingeniero superior', '€4.700,00', '35,34 €'],
+    ['Plantilla ingeniero',          '€3.700,00', '27,82 €'],
+    ['Plantilla otro perfil',        '€3.400,00', '25,56 €'],
+    ['Subcontratado',                '€5.000,00', '37,59 €'],
+    ['Dieta',                        '',          '109,00 €'],
+  ];
+  tarifas.forEach(function(tar, i) {
+    const r = R_TARIFAS + 2 + i;
+    s(sheet, r, 2, tar[0]);
+    if (tar[1]) s(sheet, r, 5, tar[1]);
+    s(sheet, r, 8, tar[2]);
+
+    fmtRange(sheet, r, 1, 1, 8, {bg: i%2===0 ? C.WHITE : C.ALT, fg: C.TEXT, size: 9});
+    merge(sheet, r, 2, 1, 3);
+    sheet.getRange(r, 2).setFontWeight('bold').setHorizontalAlignment('left');
+    if (tar[1]) {
+      inputCell(sheet, r, 5);
+      sheet.getRange(r, 5).setNumberFormat('€#,##0.00').setHorizontalAlignment('right');
+    }
+    calcCell(sheet, r, 8);
+    sheet.getRange(r, 8).setHorizontalAlignment('right').setNumberFormat('€#,##0.00');
+    try { sheet.getRange(r, 1, 1, 8).setBorder(false, false, true, false, false, false, C.BORDER, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
+  });
+
+  // Nota R2M/PENTA en fila Dieta
+  const rDieta = R_TARIFAS + 2 + 4;
+  s(sheet, rDieta, 4, 'R2M/PENTA?');
+  sheet.getRange(rDieta, 4).setFontColor(C.LINK_FG).setFontStyle('italic').setFontSize(8);
+
+  // ════════════════════════════════════════════
+  // BLOQUE F — DETALLE DE DIETAS Y VIAJES (cols 1-8, filas 19-27)
+  // ════════════════════════════════════════════
+  const R_DIETAS = 19;
+  cabeceraSec(sheet, R_DIETAS, 1, 1, 8, 'DETALLE DE DIETAS Y VIAJES', C.DARK);
+  outerBorder(sheet, R_DIETAS, 1, 9, 8);
+
+  // Sub-cabecera Dietas Diarias
+  s(sheet, R_DIETAS+1, 1, 'Dietas Diarias');
+  fmtRange(sheet, R_DIETAS+1, 1, 1, 4, {bg: C.DARK2, fg: C.WHITE, bold: true, size: 9, align: 'left'});
+  merge(sheet, R_DIETAS+1, 1, 1, 4);
+
+  const dietasDiarias = [
+    ['Alquiler coche', '€50,00'],
+    ['Gasolina',       '€27,00'],
+    ['Desplazamiento', '€32,00'],
+  ];
+  dietasDiarias.forEach(function(d, i) {
+    const r = R_DIETAS + 2 + i;
+    s(sheet, r, 2, d[0]);
+    s(sheet, r, 4, d[1]);
+    fmtRange(sheet, r, 1, 1, 4, {bg: i%2===0 ? C.WHITE : C.ALT, fg: C.TEXT, size: 9});
+    merge(sheet, r, 2, 1, 2);
+    sheet.getRange(r, 2).setFontWeight('bold');
+    inputCell(sheet, r, 4);
+    sheet.getRange(r, 4).setNumberFormat('€#,##0.00').setHorizontalAlignment('right');
+    try { sheet.getRange(r, 1, 1, 4).setBorder(false, false, true, false, false, false, C.BORDER, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
+  });
+
+  // Sub-cabecera Viajes
+  s(sheet, R_DIETAS+1, 5, 'Viajes');
+  fmtRange(sheet, R_DIETAS+1, 5, 1, 4, {bg: C.DARK2, fg: C.WHITE, bold: true, size: 9, align: 'left'});
+  merge(sheet, R_DIETAS+1, 5, 1, 4);
+
+  s(sheet, R_DIETAS+2, 5, 'Internacionales y Nacionales');
+  fmtRange(sheet, R_DIETAS+2, 5, 1, 4, {bg: C.LIGHT_HDR, fg: C.WHITE, bold: true, size: 8, align: 'left'});
+  merge(sheet, R_DIETAS+2, 5, 1, 4);
+
+  const viajes = [
+    ['Por días en pernoctar',    '48,08 €'],
+    ['Por días en sin pernoctar','64,00 €'],
+    ['Gasolina per km',          '0,27 €'],
+  ];
+  viajes.forEach(function(v, i) {
+    const r = R_DIETAS + 3 + i;
+    s(sheet, r, 6, v[0]);
+    s(sheet, r, 8, v[1]);
+    fmtRange(sheet, r, 5, 1, 4, {bg: i%2===0 ? C.WHITE : C.ALT, fg: C.TEXT, size: 9});
+    merge(sheet, r, 6, 1, 2);
+    sheet.getRange(r, 6).setFontWeight('bold').setHorizontalAlignment('left');
+    inputCell(sheet, r, 8);
+    sheet.getRange(r, 8).setHorizontalAlignment('right').setNumberFormat('€#,##0.00');
+    try { sheet.getRange(r, 5, 1, 4).setBorder(false, false, true, false, false, false, C.BORDER, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
+  });
+
+  // ════════════════════════════════════════════
+  // BLOQUE G — ANÁLISIS DE BAJAS Y CONTINGENCIAS (cols 9-16, filas 11-27)
+  // ════════════════════════════════════════════
+  const R_BAJAS = 11;
+  cabeceraSec(sheet, R_BAJAS, 9, 1, 8, 'ANÁLISIS DE BAJAS Y CONTINGENCIAS', C.DARK);
+  outerBorder(sheet, R_BAJAS, 9, 17, 8);
+
+  const bajas = [
+    ['Baja costes empresa + 9% GG + 5% BI', '-118,42%', '-118,42 €', C.RED,    true ],
+    ['Baja según convenio',                 '-98,00%',  '-28.000 €', C.MID,    false],
+    ['Baja máxima (convenio + 9% GG + 5% BI','-31,00%', '-31,00%',  C.MID,    false],
+    ['Baja máxima anormal 1 licitador',     '-25,00%',  '-25.000 €', C.MID,    false],
+    ['Baja máxima anormal 2 licitadores',   '-20,00%',  '-20.000 €', C.MID,    false],
+    ['Baja máxima anormal 3+ licitadores',  '-28,58%',  '-28.580 €', C.MID,    false],
+  ];
+
+  // Encabezados
+  s(sheet, R_BAJAS+1, 10, 'Concepto');
+  s(sheet, R_BAJAS+1, 14, '%');
+  s(sheet, R_BAJAS+1, 16, 'Valor €');
+  fmtRange(sheet, R_BAJAS+1, 9, 1, 8, {bg: C.DARK2, fg: C.WHITE, bold: true, size: 9});
+  merge(sheet, R_BAJAS+1, 10, 1, 4);
+  sheet.getRange(R_BAJAS+1, 14).setHorizontalAlignment('right');
+  sheet.getRange(R_BAJAS+1, 16).setHorizontalAlignment('right');
+
+  bajas.forEach(function(b, i) {
+    const r = R_BAJAS + 2 + i;
+    s(sheet, r, 10, b[0]);
+    s(sheet, r, 14, b[1]);
+    s(sheet, r, 16, b[2]);
+
+    // Barra de progreso simulada (col 15)
+    const barBg = b[4] ? C.RED : C.MID;
+    sheet.getRange(r, 15).setBackground(barBg);
+
+    fmtRange(sheet, r, 9, 1, 8, {bg: i%2===0 ? C.WHITE : C.ALT, size: 9});
+    merge(sheet, r, 10, 1, 4);
+    sheet.getRange(r, 10).setFontWeight('bold').setFontColor(b[3]).setHorizontalAlignment('left').setWrap(true);
+    calcCell(sheet, r, 14);
+    sheet.getRange(r, 14).setHorizontalAlignment('right').setFontColor(C.RED).setFontWeight('bold');
+    calcCell(sheet, r, 16);
+    sheet.getRange(r, 16).setHorizontalAlignment('right').setFontColor(C.RED).setFontWeight('bold');
+    try { sheet.getRange(r, 9, 1, 8).setBorder(false, false, true, false, false, false, C.BORDER, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
+  });
+
+  // Notas 6% / 13% por defecto
+  s(sheet, R_BAJAS+9,  9, '6% por defecto');
+  s(sheet, R_BAJAS+10, 9, '13% por defecto');
+  fmtRange(sheet, R_BAJAS+9,  9, 1, 8, {bg: C.ALT, fg: C.TEXT_L, italic: true, size: 8});
+  fmtRange(sheet, R_BAJAS+10, 9, 1, 8, {bg: C.ALT, fg: C.TEXT_L, italic: true, size: 8});
+  merge(sheet, R_BAJAS+9,  9, 1, 8);
+  merge(sheet, R_BAJAS+10, 9, 1, 8);
+
+  // ════════════════════════════════════════════
+  // BLOQUE H — SECCIÓN DE COMENTARIOS Y ALERTAS (cols 9-12, filas 29-38)
+  // ════════════════════════════════════════════
+  const R_COM = 29;
+  cabeceraSec(sheet, R_COM, 9, 1, 4, 'SECCIÓN DE COMENTARIOS Y ALERTAS', C.ALERT_BD);
+  sheet.getRange(R_COM, 9).setFontColor(C.TEXT);
+  outerBorder(sheet, R_COM, 9, 10, 4, C.ALERT_BD);
+
+  const comentarios = [
+    'Explicar la dinámica general del proyecto.',
+    '¿Cuántos trabajadores planeamos contratar?',
+    '¿A quién se subcontrata?',
+    '¿Quién apoya desde R2M/PENTA?',
+  ];
+  comentarios.forEach(function(com, i) {
+    const r = R_COM + 1 + i;
+    s(sheet, r, 9, '☐  ' + com);
+    fmtRange(sheet, r, 9, 1, 4, {bg: C.ALERT_BG, fg: C.TEXT, size: 9, wrap: true});
+    merge(sheet, r, 9, 1, 4);
+    sheet.setRowHeight(r, 24);
+    try { sheet.getRange(r, 9, 1, 4).setBorder(false, false, true, false, false, false, C.ALERT_BD, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
+  });
+
+  // Filas adicionales de comentario libre
+  for (let i = 0; i < 5; i++) {
+    const r = R_COM + 5 + i;
+    inputCell(sheet, r, 9);
+    merge(sheet, r, 9, 1, 4);
+    fmtRange(sheet, r, 9, 1, 4, {bg: C.INPUT_BG, size: 9, wrap: true});
+    sheet.setRowHeight(r, 22);
+  }
+
+  // ════════════════════════════════════════════
+  // BLOQUE I — ENLACES DE REFERENCIA (cols 13-16, filas 29-38)
+  // ════════════════════════════════════════════
+  const R_LINKS = 29;
+  cabeceraSec(sheet, R_LINKS, 13, 1, 4, 'ENLACES DE REFERENCIA', C.DARK2);
+  outerBorder(sheet, R_LINKS, 13, 10, 4);
+
+  // Botón simulado: Gantt y presupuesto
+  merge(sheet, R_LINKS+2, 13, 2, 4);
+  s(sheet, R_LINKS+2, 13, '📊  Gantt y presupuesto...');
+  fmtRange(sheet, R_LINKS+2, 13, 2, 4, {
+    bg: C.LINK_BG,
+    fg: C.LINK_FG,
+    bold: true,
+    size: 10,
+    align: 'center',
+    valign: 'middle',
+    border: true
+  });
+  sheet.setRowHeight(R_LINKS+2, 34);
+  sheet.setRowHeight(R_LINKS+3, 34);
+
+  // Campos de URL editables
+  const linksLabel = ['Convocatoria', 'Pliego técnico', 'Pliego económico', 'Documentación'];
+  linksLabel.forEach(function(label, i) {
+    const r = R_LINKS + 4 + i;
+    s(sheet, r, 14, label);
+    fmtRange(sheet, r, 14, 1, 1, {fg: C.TEXT, size: 9, bold: true});
+    inputCell(sheet, r, 15);
+    merge(sheet, r, 15, 1, 2);
+    sheet.getRange(r, 15).setFontColor(C.LINK_FG).setFontSize(9);
+    sheet.setRowHeight(r, 22);
+  });
+
+  // ════════════════════════════════════════════
+  // BORDE EXTERIOR GENERAL
+  // ════════════════════════════════════════════
+  outerBorder(sheet, 1, 1, 38, 16, C.DARK);
+
+  // ════════════════════════════════════════════
+  // CONGELAR FILAS / COLUMNAS
+  // ════════════════════════════════════════════
+  try { sheet.setFrozenRows(2); }    catch(e) {}
+  try { sheet.setFrozenColumns(1); } catch(e) {}
+
+  SpreadsheetApp.flush();
+
   SpreadsheetApp.getUi().alert(
-    '✦ Formato aplicado',
-    'El diseño corporativo se ha aplicado.\n\n' +
+    '✦ Panel creado',
+    'El panel de seguimiento se ha generado correctamente.\n\n' +
     '🟡 Amarillo = celda a rellenar por el usuario\n' +
-    '🟣 Lila = celda calculada automáticamente',
+    '🟣 Lila     = celda calculada automáticamente',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
-}
-
-// ─── UTILIDADES
-
-function norm(s) {
-  return String(s == null ? '' : s)
-    .toLowerCase().normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '').trim();
-}
-
-function txt(v) { return String(v == null ? '' : v).trim(); }
-
-/** Lee valor de celda con fallback a getDisplayValue para evitar excepción diferida */
-function getV(sheet, r, c) {
-  try {
-    const cell = sheet.getRange(r, c);
-    let v;
-    try { v = cell.getValue(); } catch(e1) { v = null; }
-    if (v == null) { try { v = cell.getDisplayValue(); } catch(e2) { v = ''; } }
-    return v;
-  } catch(e) { return ''; }
-}
-
-function getT(sheet, r, c) { return txt(getV(sheet, r, c)); }
-
-/** Devuelve true si la celda contiene una fórmula (es calculada, no editable) */
-function isFormula(sheet, r, c) {
-  try {
-    const f = sheet.getRange(r, c).getFormula();
-    return f !== null && f.length > 0;
-  } catch(e) { return false; }
-}
-
-function hasAny(text, arr) {
-  const t = norm(text);
-  return arr.some(function(k) { return t.indexOf(norm(k)) !== -1; });
-}
-
-function isBlankRow(sheet, r, lc) {
-  try { return sheet.getRange(r, 1, 1, lc).getDisplayValues()[0].join('').trim() === ''; }
-  catch(e) { return false; }
-}
-
-// ─── PREPARACIÓN
-
-function breakMerges(sheet) {
-  try { sheet.getRange(1, 1, Math.max(sheet.getLastRow(),1), Math.max(sheet.getLastColumn(),1)).breakApart(); } catch(e) {}
-}
-
-function resetSheet(sheet) {
-  const lr = Math.max(sheet.getLastRow(), 1);
-  const lc = Math.max(sheet.getLastColumn(), 1);
-  const rg = sheet.getRange(1, 1, lr, lc);
-
-  try { rg.setNumberFormat('General'); SpreadsheetApp.flush(); } catch(e1) {
-    for (let c = 1; c <= lc; c++) {
-      try { sheet.getRange(1, c, lr, 1).setNumberFormat('General'); SpreadsheetApp.flush(); } catch(e2) {}
-    }
-  }
-  try { rg.setBackground(C.WHITE); }                        catch(e) {}
-  try { rg.setFontColor(C.TEXT); }                          catch(e) {}
-  try { rg.setFontFamily('Arial'); }                        catch(e) {}
-  try { rg.setFontSize(10); }                               catch(e) {}
-  try { rg.setFontWeight('normal'); }                       catch(e) {}
-  try { rg.setFontStyle('normal'); }                        catch(e) {}
-  try { rg.setHorizontalAlignment('left'); }                catch(e) {}
-  try { rg.setVerticalAlignment('middle'); }                catch(e) {}
-  try { rg.setWrap(false); }                                catch(e) {}
-  try { rg.setBorder(false,false,false,false,false,false); } catch(e) {}
-  try { SpreadsheetApp.flush(); }                           catch(e) {}
-}
-
-function prepSheet(sheet) { breakMerges(sheet); resetSheet(sheet); }
-
-function freeze(sheet, rows, cols) {
-  try { sheet.setFrozenRows(rows); }    catch(e) {}
-  try { sheet.setFrozenColumns(cols); } catch(e) {}
-}
-
-// ─── FORMATOS NUMÉRICOS
-
-function snf(cell, fmt) {
-  try {
-    let v; try { v = cell.getValue(); } catch(e) { return; }
-    if (typeof v === 'number') { try { cell.setNumberFormat(fmt); } catch(e) {} }
-  } catch(e) {}
-}
-
-function applyFmt(cell, label) {
-  try {
-    let v; try { v = cell.getValue(); } catch(e) { return; }
-    if (typeof v !== 'number') return;
-    const l = norm(label);
-    let fmt = '€#,##0.00';
-    if (hasAny(l, ['baja','beneficio','gastos generales','%','porcentaje','margen','peso criterio'])) fmt = '0.00%';
-    else if (hasAny(l, ['pm','personas adscritas','precio hora','hora real','experiencia'])) fmt = '#,##0.00';
-    else if (hasAny(l, ['horas','dias','días','duracion','duración','meses','licitadores','licitador','mes_inicio','mes_final'])) fmt = '#,##0';
-    try { cell.setNumberFormat(fmt); }           catch(e) {}
-    try { cell.setHorizontalAlignment('right'); } catch(e) {}
-  } catch(e) {}
-}
-
-// ─── PRIMITIVAS DE ESTILO
-
-function hdr(range, bg) {
-  try { range.setBackground(bg||C.DARK).setFontColor(C.WHITE).setFontWeight('bold').setFontSize(9).setVerticalAlignment('middle').setHorizontalAlignment('left'); } catch(e) {}
-  try { range.setBorder(false,false,true,false,false,false, C.BORDER_M, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
-}
-
-function divider(range) {
-  try { range.setBorder(false,false,true,false,false,false, C.BORDER, SpreadsheetApp.BorderStyle.SOLID); } catch(e) {}
-}
-
-function outerBorder(range) {
-  try { range.setBorder(true,true,true,true,false,false, C.BORDER_M, SpreadsheetApp.BorderStyle.SOLID_MEDIUM); } catch(e) {}
-}
-
-function sumRow(range, bg, fontSize) {
-  try { range.setBackground(bg).setFontColor(C.WHITE).setFontWeight('bold').setFontSize(fontSize||10).setVerticalAlignment('middle'); } catch(e) {}
-}
-
-/**
- * inputCell — Marca una celda como EDITABLE por el usuario.
- * Fondo amarillo suave + borde amarillo inferior para destacar el campo.
- */
-function inputCell(cell) {
-  try {
-    cell.setBackground(C.INPUT_BG).setFontColor(C.INPUT_FG).setFontWeight('bold');
-    cell.setBorder(false, false, true, false, false, false, C.INPUT_BD, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  } catch(e) {}
-}
-
-/**
- * calcCell — Marca una celda como CALCULADA (fórmula, no editar).
- * Fondo lila muy suave + texto índigo.
- */
-function calcCell(cell) {
-  try {
-    cell.setBackground(C.CALC_BG).setFontColor(C.CALC_FG).setFontWeight('bold');
-    cell.setBorder(false, false, true, false, false, false, C.BORDER_M, SpreadsheetApp.BorderStyle.SOLID);
-  } catch(e) {}
-}
-
-/**
- * markValueCells — Recorre un rango de celdas de valor y aplica
- * inputCell si la celda tiene valor literal, o calcCell si tiene fórmula.
- * Acepta array de columnas o rango simple.
- */
-function markValueCells(sheet, r, cols) {
-  cols.forEach(function(c) {
-    try {
-      const cell = sheet.getRange(r, c);
-      let v; try { v = cell.getValue(); } catch(ex) { return; }
-      if (v === '' || v === null) return; // celda vacía: no tocar
-      if (isFormula(sheet, r, c)) {
-        calcCell(cell);
-      } else {
-        inputCell(cell);
-      }
-    } catch(ex) {}
-  });
-}
-
-function colorEstadoCell(cell, estado) {
-  const e = norm(estado);
-  try {
-    if (e === 'resuelta')   { cell.setBackground(C.RED_XL).setFontColor(C.RED_D).setFontWeight('bold').setHorizontalAlignment('center'); }
-    else if (e === 'adjudicada') { cell.setBackground(C.INDIGO_XL).setFontColor(C.INDIGO_D).setFontWeight('bold').setHorizontalAlignment('center'); }
-    else if (e === 'publicada')  { cell.setBackground(C.PURPLE_XL).setFontColor(C.PURPLE_D).setFontWeight('bold').setHorizontalAlignment('center'); }
-    else if (e !== '')           { cell.setFontWeight('bold').setHorizontalAlignment('center'); }
-  } catch(e) {}
-}
-
-function findHeaderRow(sheet, needles, maxRows) {
-  const lr = Math.min(sheet.getLastRow(), maxRows || 10);
-  const lc = Math.max(sheet.getLastColumn(), 1);
-  for (let r = 1; r <= lr; r++) {
-    try {
-      const rowText = sheet.getRange(r, 1, 1, lc).getDisplayValues()[0].map(norm).join(' | ');
-      if (needles.every(function(k) { return rowText.indexOf(norm(k)) !== -1; })) return r;
-    } catch(e) {}
-  }
-  return 1;
-}
-
-// ─────────────────────────────────────────────
-// HOJA 1 — DATOS PREVIOS
-//
-// SEGÚN SOP, campos editables en esta hoja:
-//   → Presupuesto licitación subtotal (B1)
-//   → Costes por hora de cada perfil (C3:C6)
-//   → Coste dieta por día (col E: alquiler coche, gasolina, desplazamiento)
-//   → Valores para viajes (col F)
-//   → Comentarios (fila 15+)
-// Campos calculados (fórmula):
-//   → Todo lo demás: horas totales, PM, coste personal total, precio ofertado, etc.
-// ─────────────────────────────────────────────
-function formatDatosPrevios(sheet) {
-  prepSheet(sheet);
-  sheet.setTabColor(C.PURPLE);
-
-  const lr = sheet.getLastRow();
-  const lc = sheet.getLastColumn();
-  if (lr < 1 || lc < 1) return;
-
-  const leftHdr     = ['licitacion subtotal','costes personal'];
-  const leftTypes   = ['plantilla ingeniero superior','plantilla ingeniero','plantilla otro perfil','subcontratado','dieta'];
-  const leftMetrics = ['horas totales','pm','meses de trabajo','personas adscritas','coste personal total','coste no personal'];
-  const rightHdr    = ['costes dietas'];
-  const rightTypes  = ['alquiler coche','gasolina','desplazamiento'];
-  const rightMetrics= ['precio ofertado','precio con iva','baja','beneficio industrial','gastos generales',
-                       'baja promedio','baja segun convenio','baja según convenio','baja maxima','baja máxima','anormal','licitador'];
-
-  for (let r = 1; r <= lr; r++) {
-    if (isBlankRow(sheet, r, lc)) { sheet.setRowHeight(r, 10); continue; }
-    sheet.setRowHeight(r, 26);
-
-    const a = getT(sheet, r, 1);
-    const d = lc >= 4 ? getT(sheet, r, 4) : '';
-    const e = lc >= 5 ? getT(sheet, r, 5) : '';
-
-    // Comentarios largos (texto libre — editable)
-    if (a.length > 60) {
-      try {
-        sheet.getRange(r, 1, 1, lc)
-          .setBackground(C.INPUT_BG).setFontColor(C.INPUT_FG)
-          .setFontStyle('italic').setFontSize(9).setWrap(true);
-        sheet.setRowHeight(r, 52);
-      } catch(ex) {}
-      continue;
-    }
-
-    // ─ Zona izquierda ─
-    if (hasAny(a, leftHdr)) {
-      // Cabecera de sección
-      hdr(sheet.getRange(r, 1, 1, Math.min(3, lc)), C.DARK);
-      try { sheet.getRange(r,1).setHorizontalAlignment('left').setFontSize(10); } catch(ex){}
-      // B1 = Presupuesto licitación: el valor es EDITABLE (lo ingresa el usuario según SOP)
-      if (lc >= 2 && a.toLowerCase().includes('licitacion') || a.toLowerCase().includes('licitación') || a.toLowerCase().includes('subtotal')) {
-        try {
-          const cellB = sheet.getRange(r, 2);
-          inputCell(cellB);
-          applyFmt(cellB, 'euros');
-          cellB.setHorizontalAlignment('right');
-        } catch(ex) {}
-      }
-      sheet.setRowHeight(r, 32);
-
-    } else if (hasAny(a, leftTypes)) {
-      // Filas de perfil: col B = coste/hora (EDITABLE), col C = precio hora (CALCULADO)
-      try {
-        sheet.getRange(r, 1).setFontWeight('bold').setFontColor(C.DARK).setHorizontalAlignment('right');
-        if (lc >= 2) {
-          const cellB = sheet.getRange(r, 2);
-          if (isFormula(sheet, r, 2)) { calcCell(cellB); } else { inputCell(cellB); }
-          applyFmt(cellB, a);
-        }
-        if (lc >= 3) {
-          const cellC = sheet.getRange(r, 3);
-          // Col C es generalmente el precio/hora calculado
-          if (isFormula(sheet, r, 3)) { calcCell(cellC); } else { inputCell(cellC); }
-          applyFmt(cellC, 'precio hora');
-        }
-        divider(sheet.getRange(r, 1, 1, Math.min(3, lc)));
-      } catch(ex) {}
-
-    } else if (hasAny(a, leftMetrics)) {
-      // Métricas calculadas — siempre CALC (fondo lila)
-      try {
-        const rg = sheet.getRange(r, 1, 1, Math.min(3, lc));
-        rg.setBackground(C.CALC_BG);
-        sheet.getRange(r,1).setFontWeight('bold').setFontColor(C.INDIGO_D).setHorizontalAlignment('right');
-        if (lc >= 2) {
-          calcCell(sheet.getRange(r, 2));
-          applyFmt(sheet.getRange(r, 2), a);
-          sheet.getRange(r, 2).setHorizontalAlignment('right');
-        }
-        divider(rg);
-      } catch(ex) {}
-
-    } else if (a) {
-      try {
-        sheet.getRange(r, 1).setFontColor(C.TEXT_S);
-        divider(sheet.getRange(r, 1, 1, Math.min(3, lc)));
-      } catch(ex) {}
-    }
-
-    // ─ Zona derecha (col D+) ─
-    if (lc >= 4) {
-      if (hasAny(d, rightHdr)) {
-        hdr(sheet.getRange(r, 4, 1, lc - 3), C.DARK);
-        try { sheet.getRange(r,4).setHorizontalAlignment('left').setFontSize(10); } catch(ex){}
-        sheet.setRowHeight(r, 32);
-
-      } else if (hasAny(d, rightTypes)) {
-        // Costes logísticos: col E = valor EDITABLE (el usuario introduce su coste real)
-        try {
-          sheet.getRange(r, 4).setFontWeight('bold').setFontColor(C.DARK).setHorizontalAlignment('right');
-          if (lc >= 5) {
-            const cellE = sheet.getRange(r, 5);
-            if (isFormula(sheet, r, 5)) { calcCell(cellE); } else { inputCell(cellE); }
-            applyFmt(cellE, d);
-            cellE.setHorizontalAlignment('right');
-          }
-          divider(sheet.getRange(r, 4, 1, Math.max(1, lc - 3)));
-        } catch(ex) {}
-
-      } else if (hasAny(e, rightMetrics) || hasAny(d, rightMetrics)) {
-        // Métricas resumen derechas: calculadas
-        const lCol = hasAny(e, rightMetrics) ? 5 : 4;
-        const vCol = lCol + 1;
-        try {
-          sheet.getRange(r, lCol).setFontWeight('bold').setFontColor(C.INDIGO_D).setHorizontalAlignment('right');
-          if (vCol <= lc) {
-            const cellV = sheet.getRange(r, vCol);
-            if (isFormula(sheet, r, vCol)) { calcCell(cellV); }
-            else { inputCell(cellV); }
-            applyFmt(cellV, lCol === 5 ? e : d);
-            cellV.setHorizontalAlignment('right');
-          }
-          // Col siguiente = descripción / ayuda (texto)
-          if (vCol + 1 <= lc) {
-            sheet.getRange(r, vCol+1)
-              .setBackground(C.WHITE).setFontColor(C.TEXT_L)
-              .setFontStyle('italic').setFontSize(9).setWrap(true);
-          }
-          divider(sheet.getRange(r, lCol, 1, lc - lCol + 1));
-        } catch(ex) {}
-
-      } else if (d) {
-        try {
-          sheet.getRange(r, 4).setFontColor(C.TEXT_S);
-          if (lc >= 5) applyFmt(sheet.getRange(r, 5), d);
-        } catch(ex) {}
-      }
-    }
-  }
-
-  if (lc>=1) sheet.setColumnWidth(1, 220);
-  if (lc>=2) sheet.setColumnWidth(2, 110);
-  if (lc>=3) sheet.setColumnWidth(3, 95);
-  if (lc>=4) sheet.setColumnWidth(4, 210);
-  if (lc>=5) sheet.setColumnWidth(5, 110);
-  if (lc>=6) sheet.setColumnWidth(6, 110);
-  if (lc>=7) sheet.setColumnWidth(7, 240);
-  if (lc>=8) sheet.setColumnWidth(8, 185);
-
-  outerBorder(sheet.getRange(1, 1, lr, lc));
-  freeze(sheet, 1, 0);
-  SpreadsheetApp.flush();
-}
-
-// ─────────────────────────────────────────────
-// HOJA 2 — PRESUPUESTO
-//
-// Según SOP, campos editables en esta hoja:
-//   → Col A: Actividad (nombre de tarea — lo escribe el usuario)
-//   → Col B: Descripción adicional
-//   → Col C: Tipo de recurso/perfil (dropdown o texto)
-//   → Col D: Responsable
-//   → Col E/F: Días estimados (el usuario estima las horas)
-// Campos calculados:
-//   → Col G, H, I: Costes calculados automáticamente por fórmulas
-//   → Filas SUBTOTAL / IVA / TOTAL / BAJA: siempre calculadas
-// ─────────────────────────────────────────────
-function formatPresupuesto(sheet) {
-  prepSheet(sheet);
-  sheet.setTabColor(C.RED);
-
-  const lr = sheet.getLastRow();
-  const lc = sheet.getLastColumn();
-  if (lr < 1 || lc < 1) return;
-
-  const hRow = findHeaderRow(sheet, ['actividad','descripcion'], 8);
-  hdr(sheet.getRange(hRow, 1, 1, lc), C.DARK);
-  sheet.setRowHeight(hRow, 36);
-  try {
-    sheet.getRange(hRow,1).setHorizontalAlignment('left');
-    sheet.getRange(hRow,2).setHorizontalAlignment('left');
-    if (lc>=3) sheet.getRange(hRow,3).setHorizontalAlignment('center');
-    if (lc>=4) sheet.getRange(hRow,4).setHorizontalAlignment('left');
-    for (let c=5; c<=lc; c++) sheet.getRange(hRow,c).setHorizontalAlignment('right');
-  } catch(ex) {}
-
-  let zi = 0;
-  for (let r = hRow+1; r <= lr; r++) {
-    const a   = getT(sheet, r, 1);
-    const n   = norm(a);
-    const row = sheet.getRange(r, 1, 1, lc);
-
-    if (isBlankRow(sheet, r, lc)) { sheet.setRowHeight(r, 10); continue; }
-    sheet.setRowHeight(r, 26);
-
-    // Filas de totales: siempre calculadas, fondo corporativo sólido
-    if (n === 'subtotal') {
-      sumRow(row, C.SUM_A); sheet.setRowHeight(r, 30);
-      try { sheet.getRange(r,1).setHorizontalAlignment('left'); } catch(ex){}
-      if (lc>=9) { calcCell(sheet.getRange(r,9)); applyFmt(sheet.getRange(r,9),'euros'); }
-    } else if (n === 'iva') {
-      sumRow(row, C.SUM_B); sheet.setRowHeight(r, 28);
-      try { sheet.getRange(r,1).setHorizontalAlignment('left'); } catch(ex){}
-      if (lc>=9) { try { sheet.getRange(r,9).setNumberFormat('0.00%'); } catch(ex){} }
-    } else if (n === 'total') {
-      sumRow(row, C.SUM_C, 11); sheet.setRowHeight(r, 32);
-      try { sheet.getRange(r,1).setHorizontalAlignment('left'); } catch(ex){}
-      if (lc>=9) { calcCell(sheet.getRange(r,9)); applyFmt(sheet.getRange(r,9),'euros'); sheet.getRange(r,9).setFontSize(11); }
-    } else if (n.indexOf('baja') !== -1) {
-      sumRow(row, C.SUM_D); sheet.setRowHeight(r, 28);
-      try { sheet.getRange(r,1).setHorizontalAlignment('left'); } catch(ex){}
-      if (lc>=9) { calcCell(sheet.getRange(r,9)); applyFmt(sheet.getRange(r,9),'% baja'); }
-    } else {
-      // Filas de actividad: INPUT para cols A-F, CALC para cols G-I
-      zi++;
-      try {
-        row.setBackground(zi%2===0 ? '#FAFAFA' : C.WHITE).setFontColor(C.TEXT);
-
-        // Col A: nombre de actividad — EDITABLE
-        const cellA = sheet.getRange(r, 1);
-        if (isFormula(sheet, r, 1)) { calcCell(cellA); }
-        else if (getT(sheet, r, 1) !== '') { inputCell(cellA); }
-        try { cellA.setFontWeight('bold').setWrap(true); } catch(ex){}
-
-        // Col B: descripción — EDITABLE
-        if (lc >= 2) {
-          const cellB = sheet.getRange(r, 2);
-          if (isFormula(sheet, r, 2)) { calcCell(cellB); }
-          else if (getT(sheet, r, 2) !== '') { inputCell(cellB); }
-          try { cellB.setFontStyle('italic').setFontSize(9).setWrap(true); } catch(ex){}
-        }
-
-        // Col C: tipo/perfil — EDITABLE
-        if (lc >= 3) {
-          const cellC = sheet.getRange(r, 3);
-          if (isFormula(sheet, r, 3)) { calcCell(cellC); }
-          else if (getT(sheet, r, 3) !== '') { inputCell(cellC); }
-          try { cellC.setHorizontalAlignment('center'); } catch(ex){}
-        }
-
-        // Col D: responsable/notas — EDITABLE
-        if (lc >= 4) {
-          const cellD = sheet.getRange(r, 4);
-          if (isFormula(sheet, r, 4)) { calcCell(cellD); }
-          else if (getT(sheet, r, 4) !== '') { inputCell(cellD); }
-        }
-
-        // Col E: días perfil 1 — EDITABLE (usuario estima)
-        if (lc >= 5) {
-          const cellE = sheet.getRange(r, 5);
-          if (isFormula(sheet, r, 5)) { calcCell(cellE); }
-          else { inputCell(cellE); }
-          snf(cellE, '#,##0');
-          try { cellE.setHorizontalAlignment('right'); } catch(ex){}
-        }
-
-        // Col F: días perfil 2 — EDITABLE (usuario estima)
-        if (lc >= 6) {
-          const cellF = sheet.getRange(r, 6);
-          if (isFormula(sheet, r, 6)) { calcCell(cellF); }
-          else { inputCell(cellF); }
-          snf(cellF, '#,##0');
-          try { cellF.setHorizontalAlignment('right'); } catch(ex){}
-        }
-
-        // Col G, H, I: costes calculados por fórmula — CALC
-        if (lc >= 7) { calcCell(sheet.getRange(r,7)); snf(sheet.getRange(r,7),'€#,##0.00'); try { sheet.getRange(r,7).setHorizontalAlignment('right'); } catch(ex){} }
-        if (lc >= 8) { calcCell(sheet.getRange(r,8)); snf(sheet.getRange(r,8),'€#,##0.00'); try { sheet.getRange(r,8).setHorizontalAlignment('right'); } catch(ex){} }
-        if (lc >= 9) { calcCell(sheet.getRange(r,9)); snf(sheet.getRange(r,9),'€#,##0.00'); try { sheet.getRange(r,9).setHorizontalAlignment('right').setFontWeight('bold'); } catch(ex){} }
-
-      } catch(ex) {}
-    }
-    divider(row);
-  }
-
-  sheet.setColumnWidth(1, 240);
-  sheet.setColumnWidth(2, 340);
-  if (lc>=3) sheet.setColumnWidth(3, 130);
-  if (lc>=4) sheet.setColumnWidth(4, 170);
-  if (lc>=5) sheet.setColumnWidth(5, 90);
-  if (lc>=6) sheet.setColumnWidth(6, 100);
-  if (lc>=7) sheet.setColumnWidth(7, 110);
-  if (lc>=8) sheet.setColumnWidth(8, 120);
-  if (lc>=9) sheet.setColumnWidth(9, 130);
-
-  outerBorder(sheet.getRange(hRow, 1, lr-hRow+1, lc));
-  freeze(sheet, hRow, 2);
-  SpreadsheetApp.flush();
-}
-
-// ─────────────────────────────────────────────
-// HOJA 3 — GANTT
-// ─────────────────────────────────────────────
-function formatGantt(sheet) {
-  prepSheet(sheet);
-  sheet.setTabColor(C.INDIGO);
-
-  const lr = sheet.getLastRow();
-  const lc = sheet.getLastColumn();
-  if (lr < 1 || lc < 1) return;
-
-  const META = 8, TL = 9;
-  let firstData = 4;
-  for (let r = 1; r <= Math.min(lr, 20); r++) {
-    const code = getT(sheet, r, 2);
-    if (/^(PT\d+|A\d+(\.\d+)*|E\d+(\.\d+)*)$/i.test(code)) { firstData = r; break; }
-  }
-
-  for (let r = 1; r < firstData; r++) {
-    try {
-      const vals   = sheet.getRange(r, 1, 1, lc).getDisplayValues()[0].map(txt);
-      const joined = vals.map(norm).join(' | ');
-      const isYear  = vals.some(function(v){ return /^20\d{2}$/.test(v); });
-      const isMonth = vals.some(function(v){ return /^(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)$/i.test(v); });
-      const isNum   = vals.some(function(v){ return /^\d+$/.test(v); });
-      const isMeta  = joined.indexOf('lider')!==-1 || joined.indexOf('mes_inicio')!==-1;
-
-      let bg=C.INDIGO_D, h=20, fs=8;
-      if (isYear)  { bg=C.DARK;     h=28; fs=10; }
-      else if (isMeta)  { bg=C.DARK;     h=30; fs=9;  }
-      else if (isMonth) { bg=C.INDIGO_D; h=20; fs=8;  }
-      else if (isNum)   { bg=C.INDIGO;   h=16; fs=7;  }
-
-      sheet.setRowHeight(r, h);
-      hdr(sheet.getRange(r, 1, 1, Math.min(META,lc)), bg);
-      try { sheet.getRange(r, 1, 1, Math.min(META,lc)).setFontSize(fs).setHorizontalAlignment('center'); } catch(ex){}
-      if (lc>=TL) {
-        hdr(sheet.getRange(r, TL, 1, lc-TL+1), bg);
-        try { sheet.getRange(r, TL, 1, lc-TL+1).setFontSize(fs).setHorizontalAlignment('center'); } catch(ex){}
-      }
-    } catch(ex) {}
-  }
-
-  for (let r = firstData; r <= lr; r++) {
-    if (isBlankRow(sheet, r, lc)) { sheet.setRowHeight(r, 8); continue; }
-    const code = getT(sheet, r, 2);
-    let metaBg=C.WHITE, metaFg=C.TEXT, metaW='normal', metaFs=10;
-    let actColor=C.INDIGO, inactColor='#F0EEF8';
-
-    if (/^PT\d+$/i.test(code)) {
-      metaBg=C.PT_BG; metaFg=C.WHITE; metaW='bold';
-      actColor=C.PT_ON; inactColor=C.PT_OFF; sheet.setRowHeight(r, 28);
-    } else if (/^A\d+(\.\d+)*$/i.test(code)) {
-      metaBg=C.TASK_BG; metaFg=C.WHITE; metaW='bold';
-      actColor=C.TASK_ON; inactColor=C.TASK_OFF; sheet.setRowHeight(r, 24);
-    } else if (/^E\d+(\.\d+)*$/i.test(code)) {
-      metaBg=C.DEL_BG; metaFg=C.DEL_FG; metaW='normal'; metaFs=9;
-      actColor=C.DEL_ON; inactColor=C.DEL_OFF; sheet.setRowHeight(r, 22);
-    } else { sheet.setRowHeight(r, 22); }
-
-    try {
-      sheet.getRange(r, 1, 1, Math.min(META,lc))
-        .setBackground(metaBg).setFontColor(metaFg).setFontWeight(metaW).setFontSize(metaFs);
-      if (lc>=1) sheet.getRange(r,1).setHorizontalAlignment('center');
-      if (lc>=2) sheet.getRange(r,2).setHorizontalAlignment('center');
-      if (lc>=3) sheet.getRange(r,3).setHorizontalAlignment('left').setWrap(true);
-      if (lc>=4) sheet.getRange(r,4).setHorizontalAlignment('center');
-      if (lc>=5) sheet.getRange(r,5).setHorizontalAlignment('left').setFontSize(8).setWrap(true);
-      if (lc>=6) { sheet.getRange(r,6).setHorizontalAlignment('center'); snf(sheet.getRange(r,6),'#,##0'); }
-      if (lc>=7) { sheet.getRange(r,7).setHorizontalAlignment('center'); snf(sheet.getRange(r,7),'#,##0'); }
-      if (lc>=8) { sheet.getRange(r,8).setHorizontalAlignment('center'); snf(sheet.getRange(r,8),'#,##0'); }
-    } catch(ex) {}
-
-    if (lc >= TL) {
-      for (let c = TL; c <= lc; c++) {
-        try {
-          const cell = sheet.getRange(r, c);
-          let v; try { v = cell.getValue(); } catch(ex) { v = 0; }
-          const on = (v===1||v==='1');
-          cell.setBackground(on ? actColor : inactColor)
-              .setFontColor(on ? actColor : inactColor)
-              .setFontSize(6).setHorizontalAlignment('center')
-              .setFontWeight(on ? 'bold' : 'normal');
-        } catch(ex) {}
-      }
-    }
-    divider(sheet.getRange(r, 1, 1, lc));
-  }
-
-  if (lc>=1) sheet.setColumnWidth(1, 20);
-  if (lc>=2) sheet.setColumnWidth(2, 65);
-  if (lc>=3) sheet.setColumnWidth(3, 340);
-  if (lc>=4) sheet.setColumnWidth(4, 90);
-  if (lc>=5) sheet.setColumnWidth(5, 200);
-  if (lc>=6) sheet.setColumnWidth(6, 65);
-  if (lc>=7) sheet.setColumnWidth(7, 65);
-  if (lc>=8) sheet.setColumnWidth(8, 65);
-  for (let c=TL; c<=lc; c++) sheet.setColumnWidth(c, 22);
-
-  outerBorder(sheet.getRange(1, 1, lr, lc));
-  freeze(sheet, Math.max(firstData-1, 1), META);
-  SpreadsheetApp.flush();
-}
-
-// ─────────────────────────────────────────────
-// HOJA 4 — ANÁLISIS DE SENSIBILIDAD
-// ─────────────────────────────────────────────
-function formatSensibilidad(sheet) {
-  prepSheet(sheet);
-  sheet.setTabColor(C.INDIGO);
-
-  const lr = sheet.getLastRow();
-  const lc = sheet.getLastColumn();
-  if (lr < 1 || lc < 1) return;
-
-  for (let r = 1; r <= lr; r++) {
-    if (isBlankRow(sheet, r, lc)) { sheet.setRowHeight(r, 10); continue; }
-    sheet.setRowHeight(r, 24);
-
-    const a  = getT(sheet, r, 1);
-    const b  = lc>=2 ? getT(sheet, r, 2) : '';
-    const row = sheet.getRange(r, 1, 1, lc);
-    const aN = norm(a);
-    const bN = norm(b);
-
-    if (a==='' && (bN.indexOf('plantilla')!==-1 || bN.indexOf('ingeniero')!==-1)) {
-      if (lc>=2) { hdr(sheet.getRange(r, 2, 1, Math.min(3, lc-1)), C.INDIGO_D); }
-      sheet.setRowHeight(r, 30); continue;
-    }
-    if (hasAny(a, ['categoria profesional','tabla salarial','nivel salarial','baja desproporcionada'])) {
-      hdr(row, C.DARK);
-      try { sheet.getRange(r,1).setHorizontalAlignment('left').setFontSize(10); } catch(ex){}
-      sheet.setRowHeight(r, 32); continue;
-    }
-    if (/^(ano|año)?\s*\d{4}$/.test(aN)) {
-      try { row.setBackground(C.WHITE).setFontColor(C.INDIGO_D).setFontWeight('bold').setFontSize(12).setHorizontalAlignment('left'); sheet.setRowHeight(r, 36); } catch(ex){}
-      continue;
-    }
-    if (aN.indexOf('nota:')===0 || aN[0]==='*') {
-      try { row.setBackground(C.CREAM).setFontColor(C.TEXT_L).setFontStyle('italic').setFontSize(8).setWrap(true); sheet.setRowHeight(r, 32); } catch(ex){}
-      continue;
-    }
-    if (/^\d+\s+licitador/.test(aN)) {
-      try {
-        row.setBackground(C.RED_XL);
-        sheet.getRange(r,1).setFontWeight('bold').setFontColor(C.RED_D).setHorizontalAlignment('right');
-        if (lc>=2) applyFmt(sheet.getRange(r,2),'euros');
-        if (lc>=3) applyFmt(sheet.getRange(r,3),'% baja');
-        divider(row);
-      } catch(ex){} continue;
-    }
-    if (hasAny(a, ['coste personal total','coste no personal','total + bi','precio ofertado','precio con iva','baja'])) {
-      try {
-        row.setBackground(C.CALC_BG).setFontColor(C.CALC_FG).setFontWeight('bold');
-        sheet.getRange(r,1).setHorizontalAlignment('right');
-        for (let c=2; c<=lc; c++) { calcCell(sheet.getRange(r,c)); applyFmt(sheet.getRange(r,c), a); }
-        divider(row);
-      } catch(ex){} continue;
-    }
-    if (hasAny(a, ['plantilla ingeniero superior','plantilla ingeniero','plantilla otro perfil','subcontratado'])) {
-      try {
-        row.setBackground(r%2===0 ? '#F7F6FF' : C.WHITE);
-        sheet.getRange(r,1).setFontWeight('bold').setFontColor(C.DARK);
-        for (let c=2; c<=lc; c++) {
-          let v; try { v=sheet.getRange(r,c).getValue(); } catch(ex){ v=null; }
-          if (typeof v==='number') {
-            if (isFormula(sheet,r,c)) { calcCell(sheet.getRange(r,c)); } else { inputCell(sheet.getRange(r,c)); }
-            applyFmt(sheet.getRange(r,c), a);
-          }
-        }
-        divider(row);
-      } catch(ex){} continue;
-    }
-    try {
-      row.setBackground(r%2===0 ? '#F7F6FF' : C.WHITE).setFontColor(C.TEXT);
-      sheet.getRange(r,1).setFontColor(C.TEXT_S);
-      for (let c=2; c<=lc; c++) applyFmt(sheet.getRange(r,c), a);
-      divider(row);
-    } catch(ex) {}
-  }
-
-  if (lc>=10) {
-    for (let r=1; r<=lr; r++) {
-      const j = getT(sheet, r, 10);
-      if (j.length>20) {
-        try { sheet.getRange(r,10).setBackground(C.CREAM).setFontColor(C.TEXT_L).setFontStyle('italic').setFontSize(8).setWrap(true); sheet.setRowHeight(r, Math.max(sheet.getRowHeight(r), 36)); } catch(ex){}
-      }
-    }
-    sheet.setColumnWidth(10, 260);
-  }
-
-  if (lc>=1) sheet.setColumnWidth(1, 240);
-  if (lc>=2) sheet.setColumnWidth(2, 130);
-  if (lc>=3) sheet.setColumnWidth(3, 130);
-  if (lc>=4) sheet.setColumnWidth(4, 130);
-  if (lc>=5) sheet.setColumnWidth(5, 150);
-  if (lc>=6) sheet.setColumnWidth(6, 160);
-  if (lc>=7) sheet.setColumnWidth(7, 110);
-  if (lc>=8) sheet.setColumnWidth(8, 110);
-  if (lc>=9) sheet.setColumnWidth(9, 120);
-
-  outerBorder(sheet.getRange(1, 1, lr, lc));
-  freeze(sheet, 2, 1);
-  SpreadsheetApp.flush();
-}
-
-// ─────────────────────────────────────────────
-// HOJA 5 — LICITACIONES PREVIAS
-// ─────────────────────────────────────────────
-function formatLicitaciones(sheet) {
-  prepSheet(sheet);
-  sheet.setTabColor(C.RED);
-
-  const lr = sheet.getLastRow();
-  const lc = sheet.getLastColumn();
-  if (lr < 1 || lc < 1) return;
-
-  const hRow = findHeaderRow(sheet, ['expediente','objeto'], 6);
-  hdr(sheet.getRange(hRow, 1, 1, lc), C.DARK);
-  sheet.setRowHeight(hRow, 36);
-
-  const headers = sheet.getRange(hRow, 1, 1, lc).getDisplayValues()[0].map(norm);
-  let colEstado=0; const moneyCols=[], pctCols=[];
-  headers.forEach(function(h,i) {
-    const c=i+1;
-    if (h==='estado'||h.indexOf('estado')!==-1) colEstado=c;
-    if (h.indexOf('presupuesto')!==-1||h.indexOf('valor estimado')!==-1||h.indexOf('importe adjudicado')!==-1) moneyCols.push(c);
-    if (h.indexOf('%')!==-1||h.indexOf('baja')!==-1||h.indexOf('peso criterio')!==-1) pctCols.push(c);
-  });
-
-  let zi=0;
-  for (let r=hRow+1; r<=lr; r++) {
-    const row = sheet.getRange(r, 1, 1, lc);
-    if (isBlankRow(sheet, r, lc)) { sheet.setRowHeight(r, 10); continue; }
-    zi++;
-    try {
-      row.setBackground(zi%2===0 ? '#FAFAFA' : C.WHITE).setFontColor(C.TEXT);
-      sheet.setRowHeight(r, 24);
-      moneyCols.forEach(function(c){ applyFmt(sheet.getRange(r,c),'euros'); });
-      pctCols.forEach(function(c){   applyFmt(sheet.getRange(r,c),'%');     });
-      if (colEstado>0) colorEstadoCell(sheet.getRange(r,colEstado), getT(sheet,r,colEstado));
-      divider(row);
-    } catch(ex) {}
-  }
-
-  if (lc>=1)  sheet.setColumnWidth(1, 120);
-  if (lc>=2)  sheet.setColumnWidth(2, 420);
-  if (lc>=3)  sheet.setColumnWidth(3, 280);
-  if (lc>=4)  sheet.setColumnWidth(4, 240);
-  if (lc>=5)  sheet.setColumnWidth(5, 120);
-  if (lc>=9)  sheet.setColumnWidth(9, 130);
-  if (lc>=10) sheet.setColumnWidth(10, 130);
-  if (lc>=16) sheet.setColumnWidth(16, 130);
-  if (lc>=17) sheet.setColumnWidth(17, 100);
-  if (lc>=18) sheet.setColumnWidth(18, 220);
-
-  outerBorder(sheet.getRange(hRow, 1, lr-hRow+1, lc));
-  freeze(sheet, hRow, 2);
-  SpreadsheetApp.flush();
-}
-
-// ─────────────────────────────────────────────
-// FALLBACK GENÉRICO
-// ─────────────────────────────────────────────
-function formatGenerico(sheet) {
-  prepSheet(sheet);
-  sheet.setTabColor(C.PURPLE);
-  const lr = sheet.getLastRow();
-  const lc = sheet.getLastColumn();
-  if (lr < 1 || lc < 1) return;
-  hdr(sheet.getRange(1, 1, 1, lc), C.DARK);
-  sheet.setRowHeight(1, 34);
-  let zi=0;
-  for (let r=2; r<=lr; r++) {
-    if (isBlankRow(sheet, r, lc)) { sheet.setRowHeight(r, 10); continue; }
-    zi++;
-    try {
-      sheet.getRange(r,1,1,lc).setBackground(zi%2===0 ? '#FAFAFA' : C.WHITE).setFontColor(C.TEXT);
-      divider(sheet.getRange(r,1,1,lc));
-      sheet.setRowHeight(r, 24);
-    } catch(ex) {}
-  }
-  outerBorder(sheet.getRange(1, 1, lr, lc));
-  freeze(sheet, 1, 0);
-  SpreadsheetApp.flush();
 }
